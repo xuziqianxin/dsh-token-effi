@@ -28,6 +28,40 @@ const bad = (code, message) => Response.json({ ok: false, error: { code, message
  */
 const VALID = new Set(['accept', 'nitpick', 'change', 'ambiguous']);
 
+/** 范围档位：天数；0 表示全部。 */
+const RANGE_DAYS = { '7d': 7, '30d': 30, '365d': 365, all: 0 };
+
+/**
+ * 每个会话的最近活动时间：取会话目录里最新文件的 mtime。
+ * 只做目录扫描 + stat，不解析日志，几十个会话是毫秒级。
+ */
+function buildActivity(home) {
+  const map = new Map();
+  try {
+    const root = join(home, 'sessions');
+    for (const ws of readdirSync(root, { withFileTypes: true })) {
+      if (!ws.isDirectory()) continue;
+      const wsDir = join(root, ws.name);
+      for (const s of readdirSync(wsDir, { withFileTypes: true })) {
+        if (!s.isDirectory() || !s.name.startsWith('session-')) continue;
+        const id = s.name.slice('session-'.length);
+        const dir = join(wsDir, s.name);
+        let newest = 0;
+        try {
+          for (const f of readdirSync(dir)) {
+            try {
+              const st = statSync(join(dir, f));
+              if (st.mtimeMs > newest) newest = st.mtimeMs;
+            } catch { /* 单个文件读不到就跳过 */ }
+          }
+        } catch { /* 目录读不到就跳过 */ }
+        if (newest) map.set(id, newest);
+      }
+    }
+  } catch { /* 没有 sessions 目录就退化为 createdAt */ }
+  return map;
+}
+
 /** Harness home：优先运行时注册的 dshHomePath，其次 DSH_HOME，最后 ~/.dsh。 */
 function homeOf(ctx) {
   try {
