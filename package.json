@@ -14,6 +14,14 @@
     "evaluation"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xuziqianxin/dsh-token-effi.git"
+  },
+  "homepage": "https://github.com/xuziqianxin/dsh-token-effi#readme",
+  "bugs": {
+    "url": "https://github.com/xuziqianxin/dsh-token-effi/issues"
+  },
   "engines": {
     "node": "^22.19.0 || >=24.0.0",
     "dsh": ">=0.2.0-rc.2 || >=0.2.1-rc.2"
