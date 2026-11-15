@@ -55,6 +55,39 @@ dsh plugin --profile web update dsh-token-effi@latest
 
 看不到的话：**Plugins** 里确认 `dsh-token-effi` 这一行是启用状态；改过代码则禁用再启用一次。
 
+### 装不上 / 装完看不到？
+
+**`ERR_PNPM_EPERM rename ... dsh-token-effi`**
+
+同名包还在 `node_modules` 里（旧版本、或开发模式的软链接）。按顺序做：
+
+1. 卸载：**Plugins** 里移除 `dsh-token-effi`
+2. 完全退出 DSH（不是关窗口，是退出进程）
+3. 删掉残留目录：`cmd /c rmdir "C:\Users\<你>\.dsh\profiles\<profile>\node_modules\dsh-token-effi"`
+4. 重开 DSH，再装
+
+根因：pnpm 要把新目录 rename 到旧目录上，而旧目录是正在被进程占用的软链接。
+
+**装完没有「效费比洞察」**
+
+- 先 **Ctrl+F5** 硬刷新（客户端 bundle 需要重新加载）
+- 确认 **Plugins** 里这一行是启用状态
+- 用了非标准 profile 的话，确认里面有 `@deepseek-ai/dsh-client-ui-conversation`（客户端半边依赖它）
+
+**面板一直在转圈 / 报「分析失败」**
+
+看红字提示。常见是标注文件写不进去：`<profile>/token-effi/labels.json` 所在目录无写权限。
+
+**「结构口径」但算不出效费比**
+
+正常，还没标注。去标注队列标几轮。
+
+### 兼容性
+
+- 只在 **DSH `0.2.2-rc.3`**（Windows 桌面版）上验证过
+- 没有运行时依赖，宿主侧只用 Node 内置模块
+- 用到了 `sessionQuery`、`connection.fetch`、`main`/`sidebar.panellist`/`conversation.view` 三个槽——更老的 DSH 版本可能没有
+
 ### 卸载
 
 **Plugins** 里对该插件点移除。标注数据不在插件包内，卸载不会删除（见下方「数据存在哪」）。
