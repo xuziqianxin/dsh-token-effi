@@ -296,7 +296,7 @@ export function analyze(events, labels, sessionId) {
   // ── 轮次 ──
   const turnRows = [];
   for (const t of turns.values()) {
-    if (!t.requests.length || !Number.isFinite(t.turn)) continue;
+    if (!t.requests.length || !Number.isFinite(t.turn) || t.turn < 0) continue;
     const et = t.requests.reduce((s, r) => s + r.et, 0);
     const tokens = t.requests.reduce((s, r) => s + r.prompt + r.out, 0);
     const reaction = userMsgs.find((u) => u.seq > (t.lastSeq ?? -1));
@@ -362,9 +362,18 @@ export function analyze(events, labels, sessionId) {
       if (!covered || !etAll) return null;
       return {
         covered,
-        et: { acc: acc.et, bad: bad.et, unk: unk.et, total: etAll, ratio: acc.et / etAll, inverse: bad.et / Math.max(1, acc.et) },
-        token: { acc: acc.tok, bad: bad.tok, unk: unk.tok, total: tkAll, ratio: acc.tok / Math.max(1, tkAll), inverse: bad.tok / Math.max(1, acc.tok) },
-        unitCost: etAll / Math.max(1, acc.n),
+        et: {
+          acc: acc.et, bad: bad.et, unk: unk.et, total: etAll,
+          ratio: acc.et / etAll,
+          // 没有有效轮次时不给「1 : 巨大数」这种假比值
+          inverse: acc.et > 0 ? bad.et / acc.et : null,
+        },
+        token: {
+          acc: acc.tok, bad: bad.tok, unk: unk.tok, total: tkAll,
+          ratio: acc.tok / Math.max(1, tkAll),
+          inverse: acc.tok > 0 ? bad.tok / acc.tok : null,
+        },
+        unitCost: acc.n > 0 ? etAll / acc.n : null,
       };
     })(),
     turnRows: turnRows

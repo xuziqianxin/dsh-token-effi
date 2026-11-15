@@ -1,6 +1,6 @@
 {
   "name": "dsh-token-effi",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "type": "module",
   "description": "Per-session cost-effectiveness for DeepSeek Harness: effective vs rework tokens, six-component cost split, and a cache audit.",
   "icon": "icon.svg",
@@ -63,5 +63,8 @@
         "0.2.2-rc.3": "compatible"
       }
     }
+  },
+  "scripts": {
+    "test": "node test/smoke.mjs"
   }
 }

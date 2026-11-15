@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, existsSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,9 +33,16 @@ const RANGE_DAYS = { '7d': 7, '30d': 30, '365d': 365, all: 0 };
 
 /**
  * 每个会话的最近活动时间：取会话目录里最新文件的 mtime。
- * 只做目录扫描 + stat，不解析日志，几十个会话是毫秒级。
+ * 只做目录扫描 + stat，不解析日志；结果按 home 缓存 30 秒，切范围不会重复扫盘。
  */
+const ACTIVITY_TTL = 30 * 1000;
+const activityCache = new Map();
+
 function buildActivity(home) {
+  const now = Date.now();
+  const cached = activityCache.get(home);
+  if (cached && now - cached.at < ACTIVITY_TTL) return cached.map;
+
   const map = new Map();
   try {
     const root = join(home, 'sessions');
@@ -59,6 +66,7 @@ function buildActivity(home) {
       }
     }
   } catch { /* 没有 sessions 目录就退化为 createdAt */ }
+  activityCache.set(home, { at: now, map });
   return map;
 }
 
@@ -118,10 +126,22 @@ export function apply(ctx) {
     entries = [];
     try {
       if (existsSync(storePath)) {
-        const raw = JSON.parse(readFileSync(storePath, 'utf8'));
-        entries = Array.isArray(raw && raw.entries) ? raw.entries : [];
+        try {
+          const raw = JSON.parse(readFileSync(storePath, 'utf8'));
+          entries = Array.isArray(raw && raw.entries) ? raw.entries : [];
+        } catch (parseError) {
+          // 文件坏了：先原样备份，再当空表继续。绝不静默覆盖，数据还能从备份捞回来。
+          const backup = `${storePath}.corrupt-${Date.now()}`;
+          try {
+            copyFileSync(storePath, backup);
+            ctx.logger?.warn?.(`token-effi: 标注文件解析失败，已备份到 ${backup}（${String(parseError)}）`);
+          } catch {
+            ctx.logger?.warn?.(`token-effi: 标注文件解析失败且备份失败（${String(parseError)}）`);
+          }
+          entries = [];
+        }
       } else {
-        // 一次性迁移：老版本把标注放在 home 或包内 data/ 下
+        // 一次性迁移：老版本把标注放在 profile 或包内 data/ 下
         for (const legacy of LEGACY) {
           try {
             if (!existsSync(legacy) || legacy === storePath) continue;
@@ -140,12 +160,16 @@ export function apply(ctx) {
     reindex();
   };
 
+  /** 原子写入：先写临时文件再 rename，避免中途失败把原文件截断成空。 */
   const save = () => {
+    const tmp = `${storePath}.tmp-${process.pid}`;
     try {
       mkdirSync(dirname(storePath), { recursive: true });
-      writeFileSync(storePath, JSON.stringify({ version: 1, entries }, null, 1), 'utf8');
+      writeFileSync(tmp, JSON.stringify({ version: 1, entries }, null, 1), 'utf8');
+      renameSync(tmp, storePath);
       return true;
     } catch (error) {
+      try { if (existsSync(tmp)) unlinkSync(tmp); } catch { /* 清理失败无所谓 */ }
       ctx.logger?.warn?.(`token-effi: 写入标注失败 ${String(error)}`);
       return false;
     }
@@ -214,12 +238,12 @@ export function apply(ctx) {
     // ── 会话清单（按最近活动时间筛范围）──────────────────────────────
     const listRoute = async (request) => {
       const body = await readBody(request);
-      const range = body && typeof body.range === 'string' && body.range in RANGE_DAYS ? body.range : '7d';
+      const range = body && typeof body.range === 'string' && Object.hasOwn(RANGE_DAYS, body.range) ? body.range : '7d';
       const days = RANGE_DAYS[range];
       const cutoff = days > 0 ? Date.now() - days * 86400000 : 0;
       try {
         const records = await ctx.sessionQuery.listSessions();
-        const activity = buildActivity(homeOf(ctx));
+        const activity = buildActivity(home);
         const kept = records
           .map((r) => ({ r, at: activity.get(r.header.id) || r.header.createdAt }))
           .filter((x) => x.at >= cutoff)
@@ -291,6 +315,7 @@ export function apply(ctx) {
       const owned = new Set();
       for (const e of entries) {
         if (!e || typeof e.sessionId !== 'string' || !Number.isFinite(e.turn)) continue;
+        if (!VALID.has(e.human)) continue;
         owned.add(`${String(e.sessionId).replace(/^session-/, '').slice(0, 8)}#${e.turn}`);
       }
       let exists = false;

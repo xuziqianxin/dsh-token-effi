@@ -171,7 +171,7 @@ window.__ModuleLoader__.load({
                 h(LegendRow, { color: C.unk, label: '未表态', value: pct(e.et.unk / e.et.total), extra: fmt(e.et.unk) }))),
             h('div', { style: { display: 'flex', gap: 22, flexWrap: 'wrap' } },
               h('div', null, h('div', { style: S.big }, pct(e.token.ratio)), h('div', { style: S.bigLabel }, '有效 token 占比')),
-              h('div', null, h('div', { style: { ...S.big, color: C.bad } }, `1 : ${e.et.inverse.toFixed(2)}`), h('div', { style: S.bigLabel }, `有效 : 无效（按量 1 : ${e.token.inverse.toFixed(2)}）`)),
+              h('div', null, h('div', { style: { ...S.big, color: C.bad } }, e.et.inverse === null ? '—' : `1 : ${e.et.inverse.toFixed(2)}`), h('div', { style: S.bigLabel }, `有效 : 无效（按量 ${e.token.inverse === null ? '—' : `1 : ${e.token.inverse.toFixed(2)}`}）`)),
               h('div', null, h('div', { style: S.big }, fmt(e.unitCost)), h('div', { style: S.bigLabel }, '单位有效产出成本 ET/轮'))))
         : h(Card, { title: '效费比', icon: '◔', meta: '未标注' },
             h('div', { style: S.muted }, '这个会话还没有人工标注的轮次，只能看结构口径。'),
@@ -582,7 +582,8 @@ window.__ModuleLoader__.load({
         h('span', { style: { ...S.muted, marginLeft: 'auto' } },
           items === null ? '读取中…' : (pending ? `分析中 ${loaded}/${items.length}` : `${items.length} 个会话 · 已分析 ${loaded}`)));
 
-      const tipLine = h('div', {        style: {
+      const tipLine = h('div', {
+        style: {
           display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12,
           padding: '8px 12px', borderRadius: 9,
           border: '1px solid rgba(127,127,127,0.18)', background: 'rgba(127,127,127,0.05)',
@@ -599,7 +600,7 @@ window.__ModuleLoader__.load({
       const kpis = h('div', { style: S.chips },
         h(Chip, { value: items ? items.length : '…', label: '会话数' }),
         h(Chip, { value: fmt(agg.et), label: '总 ET' }),
-        h(Chip, { value: agg.ratio === null ? '—' : pct(agg.ratio), label: '有效占比（已标会话加权）', color: C.acc }),
+        h(Chip, { value: agg.ratio === null ? '—' : pct(agg.ratio), label: '有效占比（已标轮 ET 合计）', color: C.acc }),
         h(Chip, { value: agg.inverse === null ? '—' : `1 : ${agg.inverse.toFixed(2)}`, label: '有效 : 无效', color: C.bad }),
         h(Chip, { value: labelled === null ? '…' : labelled, label: '已标注轮' }),
         h(Chip, { value: agg.labeledSessions, label: '有标注的会话' }));
