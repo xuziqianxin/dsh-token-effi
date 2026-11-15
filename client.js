@@ -366,6 +366,7 @@ window.__ModuleLoader__.load({
       const [storeInfo, setStoreInfo] = useState(null);
       const [range, setRange] = useState('7d');
       const [tipIdx, setTipIdx] = useState(0);
+      const [listError, setListError] = useState(null);
 
       useEffect(() => {
         let alive = true;
@@ -384,11 +385,17 @@ window.__ModuleLoader__.load({
         post('/api/token-effi/sessions', { range })
           .then((json) => {
             if (!alive) return;
-            const next = json && json.ok && Array.isArray(json.value.items) ? json.value.items : [];
+            if (!json || !json.ok) {
+              setListError((json && json.error && json.error.message) || '会话清单请求失败（宿主无响应）');
+              setItems([]);
+              return;
+            }
+            setListError(null);
+            const next = Array.isArray(json.value.items) ? json.value.items : [];
             setItems(next);
             setSelected((cur) => (next.some((i) => i.id === cur) ? cur : (next[0] ? next[0].id : null)));
           })
-          .catch(() => { if (alive) setItems([]); });
+          .catch((error) => { if (alive) { setListError(String(error)); setItems([]); } });
         return () => { alive = false; };
       }, [tick, range]);
 
@@ -575,8 +582,7 @@ window.__ModuleLoader__.load({
         h('span', { style: { ...S.muted, marginLeft: 'auto' } },
           items === null ? '读取中…' : (pending ? `分析中 ${loaded}/${items.length}` : `${items.length} 个会话 · 已分析 ${loaded}`)));
 
-      const tipLine = h('div', {
-        style: {
+      const tipLine = h('div', {        style: {
           display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12,
           padding: '8px 12px', borderRadius: 9,
           border: '1px solid rgba(127,127,127,0.18)', background: 'rgba(127,127,127,0.05)',
@@ -585,6 +591,10 @@ window.__ModuleLoader__.load({
       },
         h('span', { style: { color: C.blue, opacity: 0.9, flex: '0 0 auto' } }, '✦'),
         h('span', { style: { opacity: 0.78 } }, TIPS[tipIdx % TIPS.length]));
+
+      const errorLine = listError ? h('div', {
+        style: { marginBottom: 10, padding: '7px 11px', borderRadius: 8, fontSize: 12, color: C.bad, border: `1px solid ${C.bad}55`, background: `${C.bad}12` },
+      }, `会话清单失败：${listError}`) : null;
 
       const kpis = h('div', { style: S.chips },
         h(Chip, { value: items ? items.length : '…', label: '会话数' }),
@@ -625,7 +635,7 @@ window.__ModuleLoader__.load({
         ? h(DetailGrid, { data: current })
         : h('div', { style: { ...S.card, ...S.muted } }, items ? '选择一个会话看明细。' : '正在读取…');
 
-      return h('div', { style: S.wrap }, header, rangeBar, tipLine, kpis, labelCard, listCard, detail);
+      return h('div', { style: S.wrap }, header, rangeBar, tipLine, errorLine, kpis, labelCard, listCard, detail);
     }
 
     function NavIcon(props) {
