@@ -22,47 +22,11 @@ const ok = (value) => Response.json({ ok: true, value }, { headers: noStore });
 const bad = (code, message) => Response.json({ ok: false, error: { code, message } }, { headers: noStore });
 
 /**
- * 标注仓库位置：放在「装了本插件的那个 profile」下，而不是源码目录。
- * 探测顺序：DSH_PROFILE_DIR → ~/.dsh/profiles/<DSH_PROFILE> → 扫 profiles/* 找装了本包的那个 → 包内 data/。
+ * 官方约定：用户数据放在 `$DSH_HOME/<子系统>/` 下，与 dsh-office-kit 的
+ * `dshHomePath('office-kit', 'outputs')` 同构。走运行时注册的同一个解析器，
+ * `$DSH_HOME` 变化时自动跟随。
  */
-const PKG_NAME = (() => {
-  try { return JSON.parse(readFileSync(join(here, 'package.json'), 'utf8')).name || 'dsh-token-effi'; }
-  catch { return 'dsh-token-effi'; }
-})();
-
-function resolveStore(ctx) {
-  const home = (() => {
-    try {
-      const f = ctx?.get ? ctx.get('dshHomePath') : undefined;
-      if (typeof f === 'function') return f();
-    } catch { /* 服务未就绪 */ }
-    return process.env.DSH_HOME || join(homedir(), '.dsh');
-  })();
-
-  const candidates = [];
-  if (process.env.DSH_PROFILE_DIR) candidates.push(process.env.DSH_PROFILE_DIR);
-  if (process.env.DSH_PROFILE) candidates.push(join(home, 'profiles', process.env.DSH_PROFILE));
-
-  // 没环境变量时，扫一遍 profiles，找哪个 profile 的 node_modules 里有本包
-  try {
-    const profilesDir = join(home, 'profiles');
-    for (const name of readdirSync(profilesDir)) {
-      const candidate = join(profilesDir, name);
-      if (existsSync(join(candidate, 'node_modules', PKG_NAME))) candidates.push(candidate);
-    }
-  } catch { /* profiles 目录不可读就跳过 */ }
-
-  for (const base of candidates) {
-    try { if (existsSync(base)) return join(base, 'token-effi', 'labels.json'); } catch { /* 下一个 */ }
-  }
-  return join(here, 'data', 'labels.json');
-}
-
-/** 老版本可能把标注放在这两个位置，激活时一次性迁到新位置。 */
-const LEGACY_STORES = [
-  join(homedir(), '.dsh', 'token-effi', 'labels.json'),
-  join(here, 'data', 'labels.json'),
-];
+const VALID = new Set(['accept', 'nitpick', 'change', 'ambiguous']);
 
 /** Harness home：优先运行时注册的 dshHomePath，其次 DSH_HOME，最后 ~/.dsh。 */
 function homeOf(ctx) {
@@ -74,43 +38,28 @@ function homeOf(ctx) {
 }
 
 /**
- * 每个会话的最近活动时间：取会话目录里最新文件的 mtime。
- * 只做目录扫描 + stat，不解析日志，几十个会话是毫秒级。
+ * 一次性迁移来源：<=0.1.1 把标注写在 <profile>/token-effi/ 下，更早的写在包内 data/。
+ * 只在新位置还没有文件时读一次。
  */
-function buildActivity(home) {
-  const map = new Map();
+function legacyStores(home) {
+  const out = [];
   try {
-    const root = join(home, 'sessions');
-    for (const ws of readdirSync(root, { withFileTypes: true })) {
-      if (!ws.isDirectory()) continue;
-      const wsDir = join(root, ws.name);
-      for (const s of readdirSync(wsDir, { withFileTypes: true })) {
-        if (!s.isDirectory() || !s.name.startsWith('session-')) continue;
-        const id = s.name.slice('session-'.length);
-        const dir = join(wsDir, s.name);
-        let newest = 0;
-        try {
-          for (const f of readdirSync(dir)) {
-            try {
-              const st = statSync(join(dir, f));
-              if (st.mtimeMs > newest) newest = st.mtimeMs;
-            } catch { /* 单个文件读不到就跳过 */ }
-          }
-        } catch { /* 目录读不到就跳过 */ }
-        if (newest) map.set(id, newest);
-      }
+    const root = join(home, 'profiles');
+    for (const name of readdirSync(root)) {
+      const candidate = join(root, name, 'token-effi', 'labels.json');
+      if (existsSync(candidate)) out.push(candidate);
     }
-  } catch { /* 没有 sessions 目录就退化为 createdAt */ }
-  return map;
+  } catch { /* 没有 profiles 目录 */ }
+  out.push(join(here, 'data', 'labels.json'));
+  return out;
 }
-
-const RANGE_DAYS = { '7d': 7, '30d': 30, '365d': 365, all: 0 };
-
-const VALID = new Set(['accept', 'nitpick', 'change', 'ambiguous']);
 
 export function apply(ctx) {
   const evalCache = new Map();
-  const storePath = resolveStore(ctx);
+  const home = homeOf(ctx);
+  // 官方约定：<home>/token-effi/labels.json
+  const storePath = join(home, 'token-effi', 'labels.json');
+  const LEGACY = legacyStores(home);
   ctx.logger?.info?.(`token-effi: 标注仓库 = ${storePath}`);
 
   /**
@@ -139,7 +88,7 @@ export function apply(ctx) {
         entries = Array.isArray(raw && raw.entries) ? raw.entries : [];
       } else {
         // 一次性迁移：老版本把标注放在 home 或包内 data/ 下
-        for (const legacy of LEGACY_STORES) {
+        for (const legacy of LEGACY) {
           try {
             if (!existsSync(legacy) || legacy === storePath) continue;
             const raw = JSON.parse(readFileSync(legacy, 'utf8'));

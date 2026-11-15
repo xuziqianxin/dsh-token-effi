@@ -184,13 +184,17 @@ Python 游戏存档修改器#10                删掉增加的提示内容保留
 
 ## 数据存在哪
 
-标注写在**安装了本插件的那个 profile 目录**下：
+按 DSH 官方约定，用户数据放在 `$DSH_HOME/<子系统>/` 下（与 `dsh-office-kit` 的
+`dshHomePath('office-kit', 'outputs')` 同构）：
 
 ```
-<profile>/token-effi/labels.json
+$DSH_HOME/token-effi/labels.json          # 默认 ~/.dsh/token-effi/labels.json
 ```
 
-不写插件包、不写你的源码目录。面板底部常驻显示完整路径。插件更新或重装不会动这个文件。
+不写插件包、不写源码目录，也不会跟着 profile 走。`$DSH_HOME` 自定义时自动跟随。
+面板底部常驻显示完整路径。插件更新或重装不会动这个文件。
+
+老版本（`<= 0.1.1`，存在 `<profile>/token-effi/` 或包内 `data/`）会在首次启动时**自动迁移**过来。
 
 ## 常见问题
 

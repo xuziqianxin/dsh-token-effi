@@ -31,17 +31,10 @@
 - 三个例子
 - 减少漂移的做法（连标 10–15 条、拿不准先记 note、每 10 条自检）
 
-标注写入**安装了本插件的那个 profile 目录**下的 `token-effi/labels.json`，不写源码目录、也不依赖
-`~/.dsh` 根目录。路径探测顺序：
-
-1. `DSH_PROFILE_DIR`
-2. `~/.dsh/profiles/$DSH_PROFILE`
-3. 扫描 `profiles/*`，找 `node_modules` 里装有本包的那个 profile
-4. 都没有才退回包内 `data/labels.json`
-
-面板底部常驻显示该文件的完整路径。`data/` 与 `token-effi/` 都不进 `files` 清单，
-发布包不会带上个人标注；老版本放在 `~/.dsh/token-effi/` 或包内 `data/` 的标注会在激活时
-自动迁移到新位置。
+标注写入 **`$DSH_HOME/token-effi/labels.json`**（默认 `~/.dsh/token-effi/labels.json`），
+遵循 DSH 官方约定：用户数据放在 harness home 下的子系统目录，通过运行时注册的
+`dshHomePath` 解析，`$DSH_HOME` 变化时自动跟随。面板底部常驻显示该文件的完整路径。
+老版本放在 `<profile>/token-effi/` 或包内 `data/` 的标注会在激活时自动迁移。
 
 打开时默认只统计**最近 7 天有活动**的会话（活动时间取会话目录里最新文件的 mtime，不解析日志），
 顶部有 近 7 天 / 近 30 天 / 近 1 年 / 全部 四档范围。分析按 3 并发进行，加载期间轮播研究速览。
