@@ -1,0 +1,56 @@
+{
+  "name": "dsh-token-effi",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Per-session cost-effectiveness for DeepSeek Harness: effective vs rework tokens, six-component cost split, and a cache audit.",
+  "icon": "icon.svg",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "plugin",
+    "token",
+    "cost",
+    "cache",
+    "evaluation"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": ">=0.2.0-rc.2 || >=0.2.1-rc.2"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "analyze.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "docs",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    },
+    "compatibility": {
+      "dshReleases": {
+        "0.2.0-rc.2": "compatible",
+        "0.2.1-rc.2": "compatible"
+      }
+    }
+  }
+}

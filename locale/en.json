@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Token cost-effectiveness",
+    "description": "Adds an 效费比 view beside Chat: effective versus rework tokens, per-session cost split, and a cache audit. Turn labels come from a bundled annotation table; unlabelled sessions show the structural figure only.",
+    "detail": "docs/DETAIL.md"
+  }
+}
