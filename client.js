@@ -179,7 +179,7 @@ window.__ModuleLoader__.load({
               h('div', null, h('div', { style: S.big }, fmt(e.unitCost)), h('div', { style: S.bigLabel }, '单位有效产出成本 ET/轮'))),
             isAuto
               ? h('div', { style: { ...S.muted, marginTop: 8, fontSize: 11 } },
-                  '自动判定：不看标注，只按会话信号（下一句的语气、是否重复要求、是否在说刚交付的东西）。在 162 条人工标注上召回 71% / 精确 87%，未判出的返工已按召回折算回来，仍是上界。')
+                  `自动判定：不看标注，只按会话信号（下一句语气、是否重复要求、是否在说刚交付的东西）。在 162 条人工标注上召回 ${pct(d.auto.calibration.recall)} / 精确 ${pct(d.auto.calibration.precision)}，漏掉的那部分返工没算进来——所以这是**上界**。`)
               : (d.auto
                   ? h('div', { style: { ...S.muted, marginTop: 8, fontSize: 11 } },
                       `自动口径 ${d.auto.et.ratio === null ? '—' : pct(d.auto.et.ratio)}${d.auto.agreement !== null ? ` · 与人工一致 ${pct(d.auto.agreement)}（${d.auto.compared} 轮）` : ''}`)

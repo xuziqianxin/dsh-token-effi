@@ -371,17 +371,17 @@ export function analyze(events, labels, sessionId) {
     const tkAll = acc.tok + bad.tok + unk.tok;
     if (!etAll) return null;
 
-    // 判定器会漏掉一部分返工（召回 < 1），直接报原始比例会系统性偏乐观。
-    // 把检出的返工按召回率折算回去，剩下的算接受；召回/精确由 calibrate.mjs 实测。
-    const badC = Math.min(etAll, bad.et / AUTO_RECALL);
-    const accC = Math.max(0, etAll - badC - unk.et);
-    const known = accC + badC;
+    // 判定器会漏掉一部分返工（召回 71%），所以原始比例是**上界**：真实返工只会更多。
+    // 校正值同时给出，但小样本会撞到 100% 上限，只作参考，不做主口径。
+    const known = acc.et + bad.et;
+    const badC = Math.min(known, bad.et / AUTO_RECALL);
+    const accC = Math.max(0, known - badC);
     return {
       covered: turnRows.length,
       et: {
-        acc: accC, bad: badC, unk: unk.et, total: etAll,
-        ratio: known > 0 ? accC / known : null,
-        inverse: accC > 0 ? badC / accC : null,
+        acc: acc.et, bad: bad.et, unk: unk.et, total: known + unk.et,
+        ratio: known > 0 ? acc.et / known : null,
+        inverse: acc.et > 0 ? bad.et / acc.et : null,
       },
       token: {
         acc: acc.tok, bad: bad.tok, unk: unk.tok, total: tkAll,
@@ -391,7 +391,11 @@ export function analyze(events, labels, sessionId) {
       unitCost: acc.n > 0 ? etAll / Math.max(1, acc.n) : null,
       raw: {
         acc: acc.et, bad: bad.et,
-        ratio: (acc.et + bad.et) > 0 ? acc.et / (acc.et + bad.et) : null,
+        ratio: known > 0 ? acc.et / known : null,
+      },
+      corrected: {
+        acc: accC, bad: badC,
+        ratio: known > 0 ? accC / known : null,
       },
       calibration: { precision: AUTO_PRECISION, recall: AUTO_RECALL },
       agreement: autoCompared ? autoAgree / autoCompared : null,
