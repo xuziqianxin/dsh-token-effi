@@ -10,6 +10,12 @@
 
 const W = { miss: 1, hit: 0.1, write: 1.25, out: 4 };
 
+import { autoJudge } from './auto.js';
+
+/** 自动判定的实测质量（scripts/calibrate.mjs，162 条人工标注）。用于偏差校正。 */
+const AUTO_PRECISION = 0.87;
+const AUTO_RECALL = 0.71;
+
 const SURFACE = new Set(['system/message', 'developer/message', 'user/message', 'assistant/message', 'tool/result']);
 
 const COMPONENT_OF = {
@@ -149,6 +155,7 @@ export function analyze(events, labels, sessionId) {
   const turns = new Map();
   const userMsgs = [];
   const requests = [];
+  let lastUserText = '';
   const comp = new Map(COMPONENTS.map((c) => [c, { hit: 0, miss: 0, write: 0, et: 0 }]));
   const outClass = { reasoning: 0, text: 0, toolOk: 0, toolFail: 0, other: 0 };
   let outSumAll = 0;
@@ -183,7 +190,9 @@ export function analyze(events, labels, sessionId) {
       continue;
     }
     if (ev.type === 'user/message') {
-      userMsgs.push({ seq: ev.seq, time: ev.time, text: messageText(ev) });
+      const text = messageText(ev);
+      lastUserText = text;
+      userMsgs.push({ seq: ev.seq, time: ev.time, text });
       // 不 continue：它还要走下面的 surface 登记
     }
     if (ev.type === 'compaction/summary' && ev.data && ev.data.usage) {
@@ -278,6 +287,7 @@ export function analyze(events, labels, sessionId) {
 
     const turnNo = (ev.data && ev.data.turn) ?? -1;
     const t = turnOf(turnNo);
+    if (t.promptText === undefined) t.promptText = lastUserText;
     const reply = Array.isArray(msg && msg.content)
       ? msg.content.filter((b) => b.type === 'text' && typeof b.text === 'string').map((b) => b.text).join('\n').trim()
       : '';
@@ -301,15 +311,22 @@ export function analyze(events, labels, sessionId) {
     const tokens = t.requests.reduce((s, r) => s + r.prompt + r.out, 0);
     const reaction = userMsgs.find((u) => u.seq > (t.lastSeq ?? -1));
     const label = labelOf[`${prefix}#${t.turn}`];
+    const reason = (t.endReason && t.endReason.kind) || 'unknown';
     turnRows.push({
       turn: t.turn, et, tokens,
       requests: t.requests.length,
-      reason: (t.endReason && t.endReason.kind) || 'unknown',
+      reason,
       lastText: t.lastText || '',
       reaction: reaction ? reaction.text : '',
       reactionGapMs: reaction ? Math.max(0, reaction.time - (t.lastTime || 0)) : 0,
       label: label ? label.h : '',
       note: label ? (label.n || '') : '',
+      auto: autoJudge({
+        reason,
+        reaction: reaction ? reaction.text : '',
+        prompt: t.promptText || '',
+        reply: t.lastText || '',
+      }),
     });
   }
   turnRows.sort((a, b) => a.turn - b.turn);
@@ -326,6 +343,62 @@ export function analyze(events, labels, sessionId) {
   const audit = cacheAudit(requests);
   const etTotal = turnRows.reduce((s, t) => s + t.et, 0) + compactionET;
   const strictK = turnRows.filter((t) => t.reason === 'completed').length;
+
+  // ── 自动口径：不依赖任何标注，直接按会话信号判 ──
+  const autoBy = {
+    accept: { n: 0, et: 0, tok: 0 }, nitpick: { n: 0, et: 0, tok: 0 },
+    change: { n: 0, et: 0, tok: 0 }, ambiguous: { n: 0, et: 0, tok: 0 },
+  };
+  let autoCompared = 0;
+  let autoAgree = 0;
+  for (const row of turnRows) {
+    const slot = autoBy[row.auto];
+    if (slot) { slot.n += 1; slot.et += row.et; slot.tok += row.tokens; }
+    if (row.label) {
+      autoCompared += 1;
+      if (row.label === row.auto) autoAgree += 1;
+    }
+  }
+  const auto = (() => {
+    const acc = autoBy.accept;
+    const bad = {
+      n: autoBy.nitpick.n + autoBy.change.n,
+      et: autoBy.nitpick.et + autoBy.change.et,
+      tok: autoBy.nitpick.tok + autoBy.change.tok,
+    };
+    const unk = autoBy.ambiguous;
+    const etAll = acc.et + bad.et + unk.et;
+    const tkAll = acc.tok + bad.tok + unk.tok;
+    if (!etAll) return null;
+
+    // 判定器会漏掉一部分返工（召回 < 1），直接报原始比例会系统性偏乐观。
+    // 把检出的返工按召回率折算回去，剩下的算接受；召回/精确由 calibrate.mjs 实测。
+    const badC = Math.min(etAll, bad.et / AUTO_RECALL);
+    const accC = Math.max(0, etAll - badC - unk.et);
+    const known = accC + badC;
+    return {
+      covered: turnRows.length,
+      et: {
+        acc: accC, bad: badC, unk: unk.et, total: etAll,
+        ratio: known > 0 ? accC / known : null,
+        inverse: accC > 0 ? badC / accC : null,
+      },
+      token: {
+        acc: acc.tok, bad: bad.tok, unk: unk.tok, total: tkAll,
+        ratio: (acc.tok + bad.tok) > 0 ? acc.tok / (acc.tok + bad.tok) : null,
+        inverse: acc.tok > 0 ? bad.tok / acc.tok : null,
+      },
+      unitCost: acc.n > 0 ? etAll / Math.max(1, acc.n) : null,
+      raw: {
+        acc: acc.et, bad: bad.et,
+        ratio: (acc.et + bad.et) > 0 ? acc.et / (acc.et + bad.et) : null,
+      },
+      calibration: { precision: AUTO_PRECISION, recall: AUTO_RECALL },
+      agreement: autoCompared ? autoAgree / autoCompared : null,
+      compared: autoCompared,
+      by: autoBy,
+    };
+  })();
 
   return {
     turns: turnRows.length,
@@ -355,6 +428,7 @@ export function analyze(events, labels, sessionId) {
       cop: strictK ? etTotal / strictK : null,
     },
     labeled: { covered, coveredET, share: turnRows.length ? covered / turnRows.length : 0, by },
+    auto,
     effectiveness: (() => {
       const acc = by.accept, bad = { n: by.nitpick.n + by.change.n, et: by.nitpick.et + by.change.et, tok: by.nitpick.tok + by.change.tok }, unk = by.ambiguous;
       const etAll = acc.et + bad.et + unk.et;

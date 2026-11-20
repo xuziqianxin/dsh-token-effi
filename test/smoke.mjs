@@ -165,6 +165,40 @@ try {
     check('全返工时 inverse 为 null', allBad.effectiveness.et.inverse === null, String(allBad.effectiveness.et.inverse));
     check('全返工时 unitCost 为 null', allBad.effectiveness.unitCost === null, String(allBad.effectiveness.unitCost));
     check('全返工时 ratio 为 0', allBad.effectiveness.et.ratio === 0, String(allBad.effectiveness.et.ratio));
+
+    // 不标注也要出数：自动口径必须存在
+    const noLabels = analyze(
+      [
+        { seq: 1, time: Date.now(), type: 'user/message', data: { content: [{ type: 'text', text: '帮我写个脚本' }] } },
+        {
+          seq: 2, time: Date.now(), type: 'assistant/message',
+          data: { turn: 0, message: { content: [{ type: 'text', text: '写好了' }] }, usage: { inputTokens: 10, outputTokens: 5 } },
+        },
+        { seq: 3, time: Date.now(), type: 'turn/end', data: { turn: 0, reason: { kind: 'completed' } } },
+        { seq: 4, time: Date.now(), type: 'user/message', data: { content: [{ type: 'text', text: '还是不行，报错了' }] } },
+      ],
+      {},
+      'session-y',
+    );
+    check('没有标注时 effectiveness 为 null', noLabels.effectiveness === null);
+    check('没有标注时 auto 仍然有数', noLabels.auto !== null && noLabels.auto.covered === 1, JSON.stringify(noLabels.auto?.covered));
+    check('自动判定把「还是不行」判成返工', noLabels.turnRows[0].auto === 'nitpick', noLabels.turnRows[0].auto);
+    check('自动口径给出比例', typeof noLabels.auto.et.ratio === 'number' && noLabels.auto.et.ratio >= 0 && noLabels.auto.et.ratio <= 1, String(noLabels.auto.et.ratio));
+    check('自动口径带校准参数', noLabels.auto.calibration.recall === 0.71 && noLabels.auto.calibration.precision === 0.87);
+
+    // 没有下一句 → 自动判为未表态
+    const noReaction = analyze(
+      [
+        { seq: 1, time: Date.now(), type: 'user/message', data: { content: [{ type: 'text', text: '做个东西' }] } },
+        {
+          seq: 2, time: Date.now(), type: 'assistant/message',
+          data: { turn: 0, message: { content: [{ type: 'text', text: '做好了' }] }, usage: { inputTokens: 10, outputTokens: 5 } },
+        },
+      ],
+      {},
+      'session-z',
+    );
+    check('没有下一句判为未表态', noReaction.turnRows[0].auto === 'ambiguous', noReaction.turnRows[0].auto);
   }
 } finally {
   rmSync(tmpHome, { recursive: true, force: true });

@@ -156,25 +156,36 @@ window.__ModuleLoader__.load({
     /** 一个会话的完整卡片组：tab 和洞察页共用。 */
     function DetailGrid(props) {
       const d = props.data;
-      const e = d.effectiveness;
+      const e = d.effectiveness || d.auto;
+      const isAuto = !d.effectiveness && Boolean(d.auto);
       const compTotal = d.components.reduce((s, c) => s + c.et, 0) || 1;
       const cacheTotal = d.cache.total || 1;
       const outTotal = d.output.total || 1;
 
       const effCard = e
-        ? h(Card, { title: '效费比', icon: '◔', meta: `${e.covered} 轮已标注` },
+        ? h(Card, {
+            title: '效费比', icon: '◔',
+            meta: isAuto ? `自动判定 · ${e.covered} 轮` : `${e.covered} 轮已标注`,
+          },
             h('div', { style: { display: 'flex', gap: 18, alignItems: 'center', marginBottom: 10 } },
               h(Donut, { acc: e.et.acc, bad: e.et.bad, unk: e.et.unk, centerRatio: e.et.ratio, centerLabel: '有效' }),
               h('div', { style: { flex: 1, minWidth: 0 } },
-                h(LegendRow, { color: C.acc, label: '有效', value: pct(e.et.ratio), extra: fmt(e.et.acc) }),
-                h(LegendRow, { color: C.bad, label: '无效', value: pct(e.et.bad / e.et.total), extra: fmt(e.et.bad) }),
-                h(LegendRow, { color: C.unk, label: '未表态', value: pct(e.et.unk / e.et.total), extra: fmt(e.et.unk) }))),
+                h(LegendRow, { color: C.acc, label: '有效', value: e.et.ratio === null ? '—' : pct(e.et.ratio), extra: fmt(e.et.acc) }),
+                h(LegendRow, { color: C.bad, label: '返工', value: e.et.total ? pct(e.et.bad / e.et.total) : '—', extra: fmt(e.et.bad) }),
+                h(LegendRow, { color: C.unk, label: '未表态', value: e.et.total ? pct(e.et.unk / e.et.total) : '—', extra: fmt(e.et.unk) }))),
             h('div', { style: { display: 'flex', gap: 22, flexWrap: 'wrap' } },
-              h('div', null, h('div', { style: S.big }, pct(e.token.ratio)), h('div', { style: S.bigLabel }, '有效 token 占比')),
-              h('div', null, h('div', { style: { ...S.big, color: C.bad } }, e.et.inverse === null ? '—' : `1 : ${e.et.inverse.toFixed(2)}`), h('div', { style: S.bigLabel }, `有效 : 无效（按量 ${e.token.inverse === null ? '—' : `1 : ${e.token.inverse.toFixed(2)}`}）`)),
-              h('div', null, h('div', { style: S.big }, fmt(e.unitCost)), h('div', { style: S.bigLabel }, '单位有效产出成本 ET/轮'))))
-        : h(Card, { title: '效费比', icon: '◔', meta: '未标注' },
-            h('div', { style: S.muted }, '这个会话还没有人工标注的轮次，只能看结构口径。'),
+              h('div', null, h('div', { style: S.big }, e.token.ratio === null ? '—' : pct(e.token.ratio)), h('div', { style: S.bigLabel }, '有效 token 占比')),
+              h('div', null, h('div', { style: { ...S.big, color: C.bad } }, e.et.inverse === null ? '—' : `1 : ${e.et.inverse.toFixed(2)}`), h('div', { style: S.bigLabel }, `有效 : 返工（按量 ${e.token.inverse === null ? '—' : `1 : ${e.token.inverse.toFixed(2)}`}）`)),
+              h('div', null, h('div', { style: S.big }, fmt(e.unitCost)), h('div', { style: S.bigLabel }, '单位有效产出成本 ET/轮'))),
+            isAuto
+              ? h('div', { style: { ...S.muted, marginTop: 8, fontSize: 11 } },
+                  '自动判定：不看标注，只按会话信号（下一句的语气、是否重复要求、是否在说刚交付的东西）。在 162 条人工标注上召回 71% / 精确 87%，未判出的返工已按召回折算回来，仍是上界。')
+              : (d.auto
+                  ? h('div', { style: { ...S.muted, marginTop: 8, fontSize: 11 } },
+                      `自动口径 ${d.auto.et.ratio === null ? '—' : pct(d.auto.et.ratio)}${d.auto.agreement !== null ? ` · 与人工一致 ${pct(d.auto.agreement)}（${d.auto.compared} 轮）` : ''}`)
+                  : null))
+        : h(Card, { title: '效费比', icon: '◔', meta: '没有可判定的轮次' },
+            h('div', { style: S.muted }, '这个会话没有可判定的轮次（比如全部没有用户后续消息）。'),
             h('div', { style: { display: 'flex', gap: 22, marginTop: 10 } },
               h('div', null, h('div', { style: S.big }, pct(d.trail.strictN ? d.trail.strictK / d.trail.strictN : 0)), h('div', { style: S.bigLabel }, `正常结束 ${d.trail.strictK}/${d.trail.strictN} 轮`)),
               h('div', null, h('div', { style: { ...S.big, color: C.unk } }, d.trail.cop ? fmt(d.trail.cop) : '—'), h('div', { style: S.bigLabel }, 'CoP（旧口径）ET/轮'))));
@@ -445,19 +456,31 @@ window.__ModuleLoader__.load({
 
       const agg = useMemo(() => {
         let et = 0, acc = 0, bad = 0, unk = 0, covered = 0, labeledSessions = 0, turns = 0, reqs = 0;
+        let autoSessions = 0, agreeSum = 0, comparedSum = 0;
         for (const { data } of ranked) {
           if (!data) continue;
           et += data.etTotal || 0;
           turns += data.turns || 0;
           reqs += data.requests || 0;
-          const e = data.effectiveness;
+          const e = data.effectiveness || data.auto;
           if (e) {
             acc += e.et.acc; bad += e.et.bad; unk += e.et.unk;
-            covered += e.covered; labeledSessions += 1;
+            covered += e.covered;
+            if (data.effectiveness) labeledSessions += 1; else autoSessions += 1;
+          }
+          if (data.auto && data.auto.agreement !== null && data.auto.compared) {
+            agreeSum += data.auto.agreement * data.auto.compared;
+            comparedSum += data.auto.compared;
           }
         }
-        const total = acc + bad + unk;
-        return { et, turns, reqs, acc, bad, unk, covered, labeledSessions, ratio: total ? acc / total : null, inverse: acc ? bad / acc : null };
+        const known = acc + bad;
+        return {
+          et, turns, reqs, acc, bad, unk, covered, labeledSessions, autoSessions,
+          ratio: known ? acc / known : null,
+          inverse: acc ? bad / acc : null,
+          agreement: comparedSum ? agreeSum / comparedSum : null,
+          compared: comparedSum,
+        };
       }, [ranked]);
 
       const current = selected ? evals[selected] : null;
@@ -600,10 +623,10 @@ window.__ModuleLoader__.load({
       const kpis = h('div', { style: S.chips },
         h(Chip, { value: items ? items.length : '…', label: '会话数' }),
         h(Chip, { value: fmt(agg.et), label: '总 ET' }),
-        h(Chip, { value: agg.ratio === null ? '—' : pct(agg.ratio), label: '有效占比（已标轮 ET 合计）', color: C.acc }),
-        h(Chip, { value: agg.inverse === null ? '—' : `1 : ${agg.inverse.toFixed(2)}`, label: '有效 : 无效', color: C.bad }),
+        h(Chip, { value: agg.ratio === null ? '—' : pct(agg.ratio), label: `有效占比（人工 ${agg.labeledSessions} · 自动 ${agg.autoSessions} 会话）`, color: C.acc }),
+        h(Chip, { value: agg.inverse === null ? '—' : `1 : ${agg.inverse.toFixed(2)}`, label: '有效 : 返工', color: C.bad }),
         h(Chip, { value: labelled === null ? '…' : labelled, label: '已标注轮' }),
-        h(Chip, { value: agg.labeledSessions, label: '有标注的会话' }));
+        h(Chip, { value: agg.agreement === null ? '—' : pct(agg.agreement), label: `自动与人工一致率（${agg.compared} 轮）` }));
 
       const listCard = h(Card, { title: '会话窗口', icon: '☰', meta: items ? `${items.length} 个` : '' },
         items === null
@@ -611,7 +634,7 @@ window.__ModuleLoader__.load({
           : (items.length === 0
             ? h('div', { style: S.muted }, '这个范围内没有会话，把范围放宽一点试试。')
             : ranked.map(({ item, data, error }) => {
-              const e = data && data.effectiveness;
+              const e = data && (data.effectiveness || data.auto);
               const ratio = e ? e.et.ratio : null;
               const bar = e
                 ? h('div', { style: { display: 'flex', height: 6, borderRadius: 3, overflow: 'hidden', background: 'rgba(127,127,127,0.15)' } },
