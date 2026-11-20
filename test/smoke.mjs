@@ -60,6 +60,20 @@ async function mount({ home, sessions = [], titles = {} }) {
 
 const tmpHome = mkdtempSync(join(tmpdir(), 'token-effi-smoke-'));
 try {
+  // ── 0. 打包清单：每个顶层 .js / 文档都必须在 files 里 ──────────────
+  console.log('打包清单');
+  {
+    const pkgJson = JSON.parse(readFileSync(join(pkg, 'package.json'), 'utf8'));
+    const files = Array.isArray(pkgJson.files) ? pkgJson.files : [];
+    const topJs = readdirSync(pkg).filter((f) => f.endsWith('.js'));
+    const missing = topJs.filter((f) => !files.includes(f));
+    check('每个顶层 .js 都列在 files 里', missing.length === 0, `缺: ${missing.join(', ')}`);
+    for (const f of ['README.md', 'LICENSE']) {
+      check(`${f} 在 files 里`, files.includes(f));
+    }
+    check('test/ 和 scripts/ 不打进包', !files.some((f) => f.startsWith('test') || f.startsWith('scripts')));
+  }
+
   // ── 1. 四个路由 ────────────────────────────────────────────────────
   console.log('路由');
   {
